@@ -1,0 +1,34 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+gowcpp/
+x64/
+bin/
+
+# Private
+倉庫/
+tmp/
+*.bat
+
+# Compiled binaries
+*.exe
+*.dll
+*.pdb
+*.lib
+*.obj
+*.ilk
+*.idb
+
+# Cache
+*.cache
+*.tlog
+*.log
+
+# Others
+*.VC.db
+*.VC.opendb

@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="gowcpp.vcxproj" Id="20369567-2303-45c7-b49c-ea2633e7e21a" />
+</Solution>
