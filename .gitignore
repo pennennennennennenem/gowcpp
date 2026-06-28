@@ -23,6 +23,7 @@ tmp/
 *.obj
 *.ilk
 *.idb
+*.aps
 
 # Cache
 *.cache
