@@ -342,6 +342,7 @@ struct HotKeyCommand {
 struct Config {
     int LRUCount = 32;      //LRUリストに保存されるアイテムの数
     int listWidth = 320;    //検索ボックスに対して更にどれだけ幅を増やすか
+    int maxItemCount = 256; //検索リストの最大表示数
 	std::vector<HotKeyCommand> commands;
     std::vector<std::wstring> excludes; //除外リスト
 };
@@ -380,6 +381,9 @@ void LoadConfig()
 
     //検索結果表示ウィンドウの検索キーワード入力ウィンドウに対する幅
     g_cfg.listWidth = GetPrivateProfileIntW(L"config", L"ListWidth", g_cfg.LRUCount, g_iniPath.wstring().c_str());
+
+    //検索結果表示ウィンドウの最大アイテム表示数
+    g_cfg.maxItemCount = GetPrivateProfileIntW(L"config", L"MaxItemCount", g_cfg.maxItemCount, g_iniPath.wstring().c_str());
 
     //prefixで始まるセクション名orエントリ名に分解
     auto bunkaiLambda = [&](std::vector<std::wstring>& vec, size_t len, const std::wstring& prefix) {
@@ -730,9 +734,9 @@ void LoadLRU(char drive)
 
     std::string line;
     while (std::getline(ifs, line)) {
-        g_LRUs.push_back(L(line));
         if (g_LRUs.size() >= g_cfg.LRUCount)
             break;
+        g_LRUs.push_back(L(line));
     }
 }
 
@@ -752,10 +756,10 @@ void SaveLRU()
     if (!ofs) return;
     int nWritten = 0;
     for (const auto& s : g_LRUs) {
-        ofs << u8(s) << "\n";
-        nWritten++;
         if (nWritten >= g_cfg.LRUCount)
             break;
+        ofs << u8(s) << "\n";
+        nWritten++;
     }
     ofs.flush();
     ofs.close();
@@ -1199,8 +1203,15 @@ void ShowListWindow(const std::vector<std::wstring>& items)
 
     SendMessageW(g_hListBox, LB_RESETCONTENT, 0, 0);
 
-    for (auto& s : items)
+    for (int i = 0; auto& s : items) {
         SendMessageW(g_hListBox, LB_ADDSTRING, 0, (LPARAM)s.c_str());
+        i++;
+        if (i >= g_cfg.maxItemCount) {
+            wchar_t msg[] = L"--- Omitted due to the excessive number of items. ---";
+            SendMessageW(g_hListBox, LB_ADDSTRING, 0, (LPARAM)msg);
+            break;
+        }
+    }
 
     if (items.empty()) {
         ShowWindow(g_hListWnd, SW_HIDE);
@@ -1576,9 +1587,20 @@ LRESULT CALLBACK EditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     }
                     //検索する
                     if (!str.empty()) {
-                        auto [start, end] = BinSearch(str);
-                        for (size_t i = start; i < end; ++i) {
-                            foundDirs.push_back(g_dirs[i]);
+                        if (str[0] == L'*') {
+                            //含む検索…線形探索
+                            str = str.substr(1);
+                            for (const auto& s : g_dirs) {
+                                if (wcsstr(yenLambda(s), str.c_str())) {
+                                    foundDirs.push_back(s);
+                                }
+                            }
+                        } else {
+                            //前方一致…二分探索
+                            auto [start, end] = BinSearch(str);
+                            for (size_t i = start; i < end; ++i) {
+                                foundDirs.push_back(g_dirs[i]);
+                            }
                         }
                     }
                     //除外リストに入っているなら除外する
@@ -1611,16 +1633,24 @@ LRESULT CALLBACK EditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     //先祖名で絞り込む
                     if (!senzo.empty()) {
                         auto senzos = SplitStr(senzo, L'\\');
-                        std::erase_if(foundDirs, [&](const std::wstring& dir) {
-                            auto parts = SplitStr(dir, L'\\');
+                        std::erase_if(foundDirs, [&](const std::wstring_view& dir) {
+                            auto parts = SplitStr(std::wstring(dir), L'\\');
                             parts.pop_back(); //最後のディレクトリ名を削除
                             if (senzos.size() > parts.size()) {
                                 return true;    //そもそも先祖の数が多い
                             }
                             size_t isenzo = 0;
                             for (int i = 0; i < parts.size(); i++) {
-                                if (parts[i].starts_with(senzos[isenzo]))
+                                const auto& s = senzos[isenzo];
+                                if (s.empty()) {
                                     isenzo++;
+                                } else if (s[0] == L'*') {
+                                    if (parts[i].find(s.substr(1)) != std::wstring::npos)
+                                        isenzo++;
+                                } else {
+                                    if (parts[i].starts_with(s))
+                                        isenzo++;
+                                }
                                 if (isenzo >= senzos.size()) {
                                     return false;   //全てマッチしたのでのこす
                                 }
@@ -1651,7 +1681,7 @@ LRESULT CALLBACK EditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         ShowListWindow(foundDirs);
                     } else if (foundDirs.size() == 1) {
                         //1に絞られる
-                        Launch(foundDirs[0]);
+                        Launch(std::wstring(foundDirs[0]));
                     } else {
                         //0個だった
                         //MessageBeep(MB_ICONASTERISK);
